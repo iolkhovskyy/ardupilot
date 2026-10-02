@@ -424,8 +424,8 @@ const AP_Param::Info Plane::var_info[] = {
 
     // @Param: FS_SHORT_ACTN
     // @DisplayName: Short failsafe action
-    // @Description: The action to take on a short (FS_SHORT_TIMEOUT) failsafe event. A short failsafe event can be triggered either by loss of RC control (see THR_FS_VALUE) or by loss of GCS control (see FS_GCS_ENABL). If in CIRCLE or RTL mode this parameter is ignored. A short failsafe event in stabilization and manual modes will cause a change to CIRCLE mode if FS_SHORT_ACTN is 0 or 1, a change to FBWA mode with zero throttle if FS_SHORT_ACTN is 2, and a change to FBWB mode if FS_SHORT_ACTN is 4. In all other modes (AUTO, GUIDED and LOITER) a short failsafe event will cause no mode change if FS_SHORT_ACTN is set to 0, will cause a change to CIRCLE mode if set to 1, will change to FBWA mode with zero throttle if set to 2, or will change to FBWB if set to 4. Please see the documentation for FS_LONG_ACTN for the behaviour after FS_LONG_TIMEOUT seconds of failsafe. This parameter only applies to failsafes during fixed wing modes. Quadplane modes will switch to QLAND unless Q_OPTIONS bit 5(QRTL) or 20(RTL) are set.
-    // @Values: 0:CIRCLE/no change(if already in AUTO|GUIDED|LOITER),1:CIRCLE,2:FBWA at zero throttle,3:Disable,4:FBWB
+    // @Description: The action to take on a short (FS_SHORT_TIMEOUT) failsafe event. A short failsafe event can be triggered either by loss of RC control (see THR_FS_VALUE) or by loss of GCS control (see FS_GCS_ENABL). If already in AUTO, FBWB, CRUISE, CIRCLE, RTL or TAKEOFF this parameter is ignored and the mode is unchanged. A short failsafe event in stabilization and manual modes will cause a change to CIRCLE mode if FS_SHORT_ACTN is 0 or 1, a change to FBWA mode with zero throttle if FS_SHORT_ACTN is 2, and a change to FBWB mode if FS_SHORT_ACTN is 4. In GUIDED, LOITER and THERMAL a short failsafe event will cause no mode change if FS_SHORT_ACTN is set to 0, will cause a change to CIRCLE mode if set to 1, will change to FBWA mode with zero throttle if set to 2, or will change to FBWB if set to 4. Please see the documentation for FS_LONG_ACTN for the behaviour after FS_LONG_TIMEOUT seconds of failsafe. This parameter only applies to failsafes during fixed wing modes. Quadplane modes will switch to QLAND unless Q_OPTIONS bit 5(QRTL) or 20(RTL) are set.
+    // @Values: 0:CIRCLE/no change(if already in GUIDED|LOITER),1:CIRCLE,2:FBWA at zero throttle,3:Disable,4:FBWB
     // @User: Standard
     GSCALAR(fs_action_short,        "FS_SHORT_ACTN",  FS_ACTION_SHORT_BESTGUESS),
 
@@ -1265,6 +1265,15 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @Path: ../libraries/AC_PrecLand/AC_PrecLand.cpp
     AP_SUBGROUPINFO(precland, "PLND_", 35, ParametersG2, AC_PrecLand),
 #endif
+
+    // @Param: FS_SHORT_CLIMB
+    // @DisplayName: Short failsafe climb
+    // @Description: Altitude to climb in meters when short failsafe switches into an altitude-holding mode (CIRCLE or FBWB) from a non altitude-holding mode. Zero disables the climb. Not applied when already in AUTO, FBWB, CRUISE or CIRCLE, or when short failsafe selects FBWA or leaves the mode unchanged.
+    // @Units: m
+    // @Range: 0 100
+    // @Increment: 1
+    // @User: Standard
+    AP_GROUPINFO("FS_SHORT_CLIMB", 36, ParametersG2, fs_short_climb, 0),
 
     AP_GROUPEND
 };

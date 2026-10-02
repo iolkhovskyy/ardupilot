@@ -376,6 +376,43 @@ bool Plane::set_mode_by_number(const Mode::Number new_mode_number, const ModeRea
     return set_mode(*new_mode, reason);
 }
 
+/*
+  true if a GCS failsafe condition has persisted longer than timeout_sec.
+  Uses the same FS_GCS_ENABL rules as long failsafe.
+ */
+bool Plane::gcs_failsafe_condition_met(float timeout_sec) const
+{
+    if (g.gcs_heartbeat_fs_enabled == GCS_FAILSAFE_OFF) {
+        return false;
+    }
+
+    const uint32_t tnow = millis();
+    const uint32_t timeout_ms = timeout_sec * 1000;
+    const uint32_t gcs_last_seen_ms = gcs().sysid_myggcs_last_seen_time_ms();
+
+    if (g.gcs_heartbeat_fs_enabled == GCS_FAILSAFE_HB_AUTO) {
+        return control_mode == &mode_auto &&
+               gcs_last_seen_ms != 0 &&
+               (tnow - gcs_last_seen_ms) > timeout_ms;
+    }
+
+    if ((g.gcs_heartbeat_fs_enabled == GCS_FAILSAFE_HEARTBEAT ||
+         g.gcs_heartbeat_fs_enabled == GCS_FAILSAFE_HB_RSSI) &&
+        gcs_last_seen_ms != 0 &&
+        (tnow - gcs_last_seen_ms) > timeout_ms) {
+        return true;
+    }
+
+    if (g.gcs_heartbeat_fs_enabled == GCS_FAILSAFE_HB_RSSI &&
+        gcs().chan(0) != nullptr &&
+        gcs().chan(0)->last_radio_status_remrssi_ms() != 0 &&
+        (tnow - gcs().chan(0)->last_radio_status_remrssi_ms()) > timeout_ms) {
+        return true;
+    }
+
+    return false;
+}
+
 void Plane::check_long_failsafe()
 {
     const uint32_t gcs_last_seen_ms = gcs().sysid_myggcs_last_seen_time_ms();
@@ -391,19 +428,7 @@ void Plane::check_long_failsafe()
         if (failsafe.rc_failsafe &&
             (tnow - radio_timeout_ms) > g.fs_timeout_long*1000) {
             failsafe_long_on_event(FAILSAFE_LONG, ModeReason::RADIO_FAILSAFE);
-        } else if (g.gcs_heartbeat_fs_enabled == GCS_FAILSAFE_HB_AUTO && control_mode == &mode_auto &&
-                   gcs_last_seen_ms != 0 &&
-                   (tnow - gcs_last_seen_ms) > g.fs_timeout_long*1000) {
-            failsafe_long_on_event(FAILSAFE_GCS, ModeReason::GCS_FAILSAFE);
-        } else if ((g.gcs_heartbeat_fs_enabled == GCS_FAILSAFE_HEARTBEAT ||
-                    g.gcs_heartbeat_fs_enabled == GCS_FAILSAFE_HB_RSSI) &&
-                   gcs_last_seen_ms != 0 &&
-                   (tnow - gcs_last_seen_ms) > g.fs_timeout_long*1000) {
-            failsafe_long_on_event(FAILSAFE_GCS, ModeReason::GCS_FAILSAFE);
-        } else if (g.gcs_heartbeat_fs_enabled == GCS_FAILSAFE_HB_RSSI && 
-                   gcs().chan(0) != nullptr &&
-                   gcs().chan(0)->last_radio_status_remrssi_ms() != 0 &&
-                   (tnow - gcs().chan(0)->last_radio_status_remrssi_ms()) > g.fs_timeout_long*1000) {
+        } else if (gcs_failsafe_condition_met(g.fs_timeout_long)) {
             failsafe_long_on_event(FAILSAFE_GCS, ModeReason::GCS_FAILSAFE);
         }
     } else {
@@ -430,15 +455,19 @@ void Plane::check_short_failsafe()
     if (g.fs_action_short != FS_ACTION_SHORT_DISABLED &&
        failsafe.state == FAILSAFE_NONE &&
        flight_stage != AP_FixedWing::FlightStage::LAND) {
-        // The condition is checked and the flag rc_failsafe is set in radio.cpp
-        if(failsafe.rc_failsafe) {
+        // RC failsafe flag is set in radio.cpp; GCS uses FS_SHORT_TIMEOUT
+        if (failsafe.rc_failsafe) {
             failsafe_short_on_event(FAILSAFE_SHORT, ModeReason::RADIO_FAILSAFE);
+        } else if (gcs_failsafe_condition_met(g.fs_timeout_short)) {
+            failsafe_short_on_event(FAILSAFE_SHORT, ModeReason::GCS_FAILSAFE);
         }
     }
 
-    if(failsafe.state == FAILSAFE_SHORT) {
-        if(!failsafe.rc_failsafe || g.fs_action_short == FS_ACTION_SHORT_DISABLED) {
-            failsafe_short_off_event(ModeReason::RADIO_FAILSAFE);
+    if (failsafe.state == FAILSAFE_SHORT) {
+        const bool gcs_short_active = gcs_failsafe_condition_met(g.fs_timeout_short);
+        if ((!failsafe.rc_failsafe && !gcs_short_active) ||
+            g.fs_action_short == FS_ACTION_SHORT_DISABLED) {
+            failsafe_short_off_event(control_mode_reason);
         }
     }
 }

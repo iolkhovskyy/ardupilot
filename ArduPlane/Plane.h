@@ -1007,6 +1007,7 @@ private:
     void failsafe_long_off_event(ModeReason reason);
     void handle_battery_failsafe(const char* type_str, const int8_t action);
     bool failsafe_in_landing_sequence() const;  // returns true if the vehicle is in landing sequence.  Intended only for use in failsafe code.
+    void apply_short_failsafe_climb();
 
 #if AP_FENCE_ENABLED
     // fence.cpp
@@ -1086,6 +1087,7 @@ private:
     bool set_mode_by_number(const Mode::Number new_mode_number, const ModeReason reason);
     void check_long_failsafe();
     void check_short_failsafe();
+    bool gcs_failsafe_condition_met(float timeout_sec) const;
     void startup_INS_ground(void);
     bool should_log(uint32_t mask);
     int8_t throttle_percentage(void);

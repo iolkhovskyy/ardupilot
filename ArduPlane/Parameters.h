@@ -589,6 +589,9 @@ public:
     
     AP_Int8         axis_bitmask; // axes to be autotuned
 
+    // altitude to add on short failsafe entry into altitude-holding modes
+    AP_Float        fs_short_climb;
+
     // just to make compilation easier when all things are compiled out...
     uint8_t unused_integer;
 };
