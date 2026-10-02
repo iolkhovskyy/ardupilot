@@ -380,7 +380,7 @@ bool Plane::set_mode_by_number(const Mode::Number new_mode_number, const ModeRea
   true if a GCS failsafe condition has persisted longer than timeout_sec.
   Uses the same FS_GCS_ENABL rules as long failsafe.
  */
-bool Plane::gcs_failsafe_condition_met(float timeout_sec) const
+bool Plane::gcs_failsafe_condition_met(float timeout_sec)
 {
     if (g.gcs_heartbeat_fs_enabled == GCS_FAILSAFE_OFF) {
         return false;

@@ -1087,7 +1087,7 @@ private:
     bool set_mode_by_number(const Mode::Number new_mode_number, const ModeReason reason);
     void check_long_failsafe();
     void check_short_failsafe();
-    bool gcs_failsafe_condition_met(float timeout_sec) const;
+    bool gcs_failsafe_condition_met(float timeout_sec);
     void startup_INS_ground(void);
     bool should_log(uint32_t mask);
     int8_t throttle_percentage(void);
