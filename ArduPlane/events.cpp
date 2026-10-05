@@ -18,12 +18,38 @@ bool Plane::failsafe_in_landing_sequence() const
     return false;
 }
 
+/*
+  raise target altitude after short failsafe entry into altitude-holding modes
+ */
+void Plane::apply_short_failsafe_climb()
+{
+    const float climb_m = g2.fs_short_climb;
+    if (!is_positive(climb_m)) {
+        return;
+    }
+    const int32_t climb_cm = climb_m * 100;
+    switch (control_mode->mode_number()) {
+    case Mode::Number::FLY_BY_WIRE_B:
+    case Mode::Number::CRUISE:
+        change_target_altitude(climb_cm);
+        break;
+    case Mode::Number::CIRCLE:
+        next_WP_loc.alt += climb_cm;
+        set_target_altitude_location(next_WP_loc);
+        break;
+    default:
+        break;
+    }
+}
+
 void Plane::failsafe_short_on_event(enum failsafe_state fstype, ModeReason reason)
 {
     // This is how to handle a short loss of control signal failsafe.
     failsafe.state = fstype;
     failsafe.short_timer_ms = millis();
     failsafe.saved_mode_number = control_mode->mode_number();
+    // Climb only when short FS actually switches into an altitude-holding mode
+    bool switched_to_alt_hold = false;
     switch (control_mode->mode_number())
     {
     case Mode::Number::MANUAL:
@@ -31,9 +57,7 @@ void Plane::failsafe_short_on_event(enum failsafe_state fstype, ModeReason reaso
     case Mode::Number::ACRO:
     case Mode::Number::FLY_BY_WIRE_A:
     case Mode::Number::AUTOTUNE:
-    case Mode::Number::FLY_BY_WIRE_B:
-    case Mode::Number::CRUISE:
-    case Mode::Number::TRAINING:  
+    case Mode::Number::TRAINING:
         if(plane.emergency_landing) {
             set_mode(mode_fbwa, reason); // emergency landing switch overrides normal action to allow out of range landing
             break;
@@ -42,8 +66,10 @@ void Plane::failsafe_short_on_event(enum failsafe_state fstype, ModeReason reaso
             set_mode(mode_fbwa, reason);
         } else if (g.fs_action_short == FS_ACTION_SHORT_FBWB) {
             set_mode(mode_fbwb, reason);
+            switched_to_alt_hold = true;
         } else {
-            set_mode(mode_circle, reason); // circle if action = 0 or 1 
+            set_mode(mode_circle, reason); // circle if action = 0 or 1
+            switched_to_alt_hold = true;
         }
         break;
 
@@ -65,13 +91,6 @@ void Plane::failsafe_short_on_event(enum failsafe_state fstype, ModeReason reaso
         break;
 #endif // HAL_QUADPLANE_ENABLED
 
-    case Mode::Number::AUTO: {
-        if (failsafe_in_landing_sequence()) {
-            // don't failsafe in a landing sequence
-            break;
-        }
-        FALLTHROUGH;
-    }
     case Mode::Number::AVOID_ADSB:
     case Mode::Number::GUIDED:
     case Mode::Number::LOITER:
@@ -82,12 +101,17 @@ void Plane::failsafe_short_on_event(enum failsafe_state fstype, ModeReason reaso
                 set_mode(mode_fbwa, reason);
             } else if (g.fs_action_short == FS_ACTION_SHORT_FBWB) {
                 set_mode(mode_fbwb, reason);
+                switched_to_alt_hold = true;
             } else {
                 set_mode(mode_circle, reason);
+                switched_to_alt_hold = true;
             }
         }
          break;
-    case Mode::Number::CIRCLE:  // these modes never take any short failsafe action and continue
+    case Mode::Number::AUTO:            // already navigating / altitude-holding: keep mode and altitude
+    case Mode::Number::FLY_BY_WIRE_B:
+    case Mode::Number::CRUISE:
+    case Mode::Number::CIRCLE:          // these modes never take any short failsafe action and continue
     case Mode::Number::TAKEOFF:
     case Mode::Number::RTL:
 #if HAL_QUADPLANE_ENABLED
@@ -98,10 +122,14 @@ void Plane::failsafe_short_on_event(enum failsafe_state fstype, ModeReason reaso
     case Mode::Number::INITIALISING:
         break;
     }
+    if (switched_to_alt_hold) {
+        apply_short_failsafe_climb();
+    }
+    const char *fs_type = (reason == ModeReason::GCS_FAILSAFE) ? "GCS" : "RC";
     if (failsafe.saved_mode_number != control_mode->mode_number()) {
-        gcs().send_text(MAV_SEVERITY_WARNING, "RC Short Failsafe: switched to %s", control_mode->name());
+        gcs().send_text(MAV_SEVERITY_WARNING, "%s Short Failsafe: switched to %s", fs_type, control_mode->name());
     } else {
-        gcs().send_text(MAV_SEVERITY_WARNING, "RC Short Failsafe On");
+        gcs().send_text(MAV_SEVERITY_WARNING, "%s Short Failsafe On", fs_type);
     }
 }
 
@@ -213,12 +241,15 @@ void Plane::failsafe_long_on_event(enum failsafe_state fstype, ModeReason reason
 
 void Plane::failsafe_short_off_event(ModeReason reason)
 {
-    // We're back in radio contact
+    // We're back in RC or GCS contact
     gcs().send_text(MAV_SEVERITY_WARNING, "Short Failsafe Cleared");
     failsafe.state = FAILSAFE_NONE;
     // restore entry mode if desired but check that our current mode is still due to failsafe
-    if (control_mode_reason == ModeReason::RADIO_FAILSAFE) { 
+    if (control_mode_reason == ModeReason::RADIO_FAILSAFE) {
        set_mode_by_number(failsafe.saved_mode_number, ModeReason::RADIO_FAILSAFE_RECOVERY);
+       gcs().send_text(MAV_SEVERITY_INFO,"Flight mode %s restored",control_mode->name());
+    } else if (control_mode_reason == ModeReason::GCS_FAILSAFE) {
+       set_mode_by_number(failsafe.saved_mode_number, ModeReason::GCS_COMMAND);
        gcs().send_text(MAV_SEVERITY_INFO,"Flight mode %s restored",control_mode->name());
     }
 }

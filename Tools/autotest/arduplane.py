@@ -1431,6 +1431,86 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         self.reboot_sitl()
         self.end_subtest("Completed Parachute Failsafe test")
 
+    def GCSShortFailsafe(self):
+        '''Ensure GCS short failsafe keeps alt-hold modes and climbs when switching'''
+        climb_m = 10
+        self.load_sample_mission()
+        self.set_parameters({
+            "FS_GCS_ENABL": 1,
+            "FS_SHORT_ACTN": 4,  # FBWB
+            "FS_SHORT_TIMEOUT": 1.5,
+            "FS_LONG_TIMEOUT": 40,
+            "FS_LONG_ACTN": 1,  # RTL
+            "FS_SHORT_CLIMB": climb_m,
+            "RTL_AUTOLAND": 1,
+            "SYSID_MYGCS": self.mav.source_system,
+        })
+        self.takeoff(100)
+
+        self.start_subtest("GCS short from FBWA switches to FBWB and climbs")
+        self.change_mode('FBWA')
+        self.set_rc_from_map({
+            1: 1500,
+            2: 1500,
+            3: 1700,
+        })
+        self.delay_sim_time(2)
+        alt_before = self.get_altitude(relative=True)
+        self.context_collect("STATUSTEXT")
+        self.progress("Disconnecting GCS")
+        self.set_heartbeat_rate(0)
+        self.wait_statustext("GCS Short Failsafe: switched to FLY_BY_WIRE_B", check_context=True, timeout=10)
+        self.wait_mode("FBWB", timeout=5)
+        self.wait_altitude(alt_before + climb_m - 3,
+                           alt_before + climb_m + 15,
+                           relative=True,
+                           timeout=45)
+        self.set_heartbeat_rate(self.speedup)
+        self.wait_statustext("Short Failsafe Cleared", check_context=True, timeout=10)
+        self.end_subtest("Completed FBWA short climb test")
+
+        self.start_subtest("GCS short from AUTO keeps AUTO then long goes RTL")
+        self.set_parameter("FS_LONG_TIMEOUT", 5)
+        self.change_mode('AUTO')
+        self.delay_sim_time(2)
+        self.context_collect("STATUSTEXT")
+        self.progress("Disconnecting GCS")
+        self.set_heartbeat_rate(0)
+        self.wait_statustext("GCS Short Failsafe On", check_context=True, timeout=10)
+        self.assert_mode('AUTO')
+        self.delay_sim_time(2)
+        self.assert_mode('AUTO')
+        self.wait_mode("RTL", timeout=15)
+        self.set_heartbeat_rate(self.speedup)
+        self.end_subtest("Completed AUTO short/long test")
+
+        self.start_subtest("GCS short from FBWB keeps mode and does not climb")
+        self.set_parameter("FS_LONG_TIMEOUT", 40)
+        self.change_mode('FBWB')
+        self.set_rc_from_map({
+            1: 1500,
+            2: 1500,
+            3: 1700,
+        })
+        self.delay_sim_time(5)
+        alt_before = self.get_altitude(relative=True)
+        self.context_collect("STATUSTEXT")
+        self.progress("Disconnecting GCS")
+        self.set_heartbeat_rate(0)
+        self.wait_statustext("GCS Short Failsafe On", check_context=True, timeout=10)
+        self.assert_mode('FBWB')
+        self.watch_altitude_maintained(alt_before - 5,
+                                       alt_before + 5,
+                                       minimum_duration=5,
+                                       relative=True)
+        self.assert_mode('FBWB')
+        self.set_heartbeat_rate(self.speedup)
+        self.wait_statustext("Short Failsafe Cleared", check_context=True, timeout=10)
+        self.end_subtest("Completed FBWB no-climb test")
+
+        self.disarm_vehicle(force=True)
+        self.reboot_sitl()
+
     def TestGripperMission(self):
         '''Test Gripper mission items'''
         self.context_push()
@@ -4603,18 +4683,24 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         spiral_script = "mission_spiral.lua"
 
         self.context_push()
+        # Drop leftover scripts from other tests (e.g. aerobatics) that
+        # compete for scripting heap and delay script startup.
+        for leftover in os.listdir("scripts"):
+            if leftover.endswith(".lua") or leftover.endswith(".txt"):
+                self.remove_installed_script(leftover)
+
         self.install_example_script(spiral_script)
-        self.context_collect('STATUSTEXT')
         self.set_parameters({
             "BRD_SD_MISSION" : 64,
             "SCR_ENABLE" : 1,
-            "SCR_VM_I_COUNT" : 1000000
+            "SCR_VM_I_COUNT" : 1000000,
+            "SCR_HEAP_SIZE" : 1024000,
             })
-
-        self.wait_ready_to_arm()
+        # HEAP_SIZE / SCR_ENABLE need a reboot before scripting starts
         self.reboot_sitl()
+        self.context_collect('STATUSTEXT')
+        self.wait_text("Loaded spiral mission creator", check_context=True, timeout=60)
 
-        self.wait_text("Loaded spiral mission creator", check_context=True)
         self.set_parameters({
             "SCR_USER2": 19, # radius
             "SCR_USER3": -35.36322, # lat
@@ -4627,18 +4713,19 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         self.progress("Creating spiral mission of size %s" % count)
         self.set_parameter("SCR_USER1", count)
 
-        self.wait_text("Created spiral of size %u" % count, check_context=True)
+        self.wait_text("Created spiral of size %u" % count, check_context=True, timeout=60)
 
         self.progress("Checking spiral before reboot")
         self.set_parameter("SCR_USER6", count)
-        self.wait_text("Compared spiral of size %u OK" % count, check_context=True)
+        self.wait_text("Compared spiral of size %u OK" % count, check_context=True, timeout=60)
         self.set_parameter("SCR_USER6", 0)
 
         self.wait_ready_to_arm()
         self.reboot_sitl()
+        self.context_collect('STATUSTEXT')
         self.progress("Checking spiral after reboot")
         self.set_parameter("SCR_USER6", count)
-        self.wait_text("Compared spiral of size %u OK" % count, check_context=True)
+        self.wait_text("Compared spiral of size %u OK" % count, check_context=True, timeout=60)
 
         self.remove_installed_script(spiral_script)
 
@@ -4916,6 +5003,8 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         '''Test run_mission.py script'''
         script = os.path.join('Tools', 'autotest', 'run_mission.py')
         self.stop_SITL()
+        # Give TCP ports time to release before the nested SITL starts
+        time.sleep(2)
         util.run_cmd([
             util.reltopdir(script),
             self.binary,
@@ -5407,6 +5496,7 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
             self.AirspeedCal,
             self.MissionJumpTags,
             Test(self.GCSFailsafe, speedup=8),
+            Test(self.GCSShortFailsafe, speedup=8),
             self.SDCardWPTest,
             self.NoArmWithoutMissionItems,
             self.MODE_SWITCH_RESET,
