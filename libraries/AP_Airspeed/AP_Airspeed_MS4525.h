@@ -58,6 +58,9 @@ private:
     uint32_t _press_count;
     float _temperature;
     float _pressure;
+    // last accepted sample pressure used for jump rejection
+    float _last_sample_pressure;
+    uint8_t _pressure_jump_rejects;
     uint32_t _last_sample_time_ms;
     uint32_t _measurement_started_ms;
     AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev;
