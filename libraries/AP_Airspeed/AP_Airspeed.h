@@ -7,6 +7,10 @@
 #include <AP_Param/AP_Param.h>
 #include <AP_Math/AP_Math.h>
 
+#ifndef HAL_BUILD_AP_PERIPH
+#include "AP_Airspeed_Filter.h"
+#endif
+
 #if AP_AIRSPEED_MSP_ENABLED
 #include <AP_MSP/msp.h>
 #endif
@@ -251,6 +255,9 @@ private:
         uint32_t last_update_ms;
         bool use_zero_offset;
         bool	healthy;
+#ifndef HAL_BUILD_AP_PERIPH
+        AP_Airspeed_Filter spike_filter;
+#endif
 
         // state of runtime calibration
         struct {

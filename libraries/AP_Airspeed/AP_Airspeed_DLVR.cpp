@@ -114,6 +114,14 @@ void AP_Airspeed_DLVR::timer()
     uint32_t pres_raw = (data >> PRESSURE_SHIFT)    & PRESSURE_MASK;
     uint32_t temp_raw = (data >> TEMPERATURE_SHIFT) & TEMPERATURE_MASK;
 
+    // reject stuck rails, including an all-zero read. These come from
+    // ground lifts or I2C bus errors, same as the MS4525 driver.
+    if (pres_raw == 0 || pres_raw == PRESSURE_MASK ||
+        temp_raw == 0 || temp_raw == TEMPERATURE_MASK) {
+        Debug("DLVR: Stuck raw pressure %u temperature %u", (unsigned)pres_raw, (unsigned)temp_raw);
+        return;
+    }
+
     float press_h2o = 1.25f * 2.0f * range_inH2O * ((pres_raw - DLVR_OFFSET) / DLVR_SCALE);
 
     if ((press_h2o > range_inH2O) || (press_h2o < -range_inH2O)) {
