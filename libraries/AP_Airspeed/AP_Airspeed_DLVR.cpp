@@ -36,8 +36,6 @@ extern const AP_HAL::HAL &hal;
 
 AP_Airspeed_DLVR::AP_Airspeed_DLVR(AP_Airspeed &_frontend, uint8_t _instance, const float _range_inH2O) :
     AP_Airspeed_Backend(_frontend, _instance),
-    last_sample_pressure(0),
-    pressure_jump_rejects(0),
     range_inH2O(_range_inH2O)
 {}
 
@@ -94,16 +92,6 @@ bool AP_Airspeed_DLVR::init()
 #define DLVR_OFFSET 8192.0f
 #define DLVR_SCALE 16384.0f
 
-/*
-  Maximum allowed change between successive accepted samples.
-  At 50Hz a real gust cannot approach this; a buggy mid-scale/zero
-  glitch while flying will. If several samples in a row exceed the
-  limit we accept one anyway so a real step change can resync instead
-  of locking onto a stale baseline.
- */
-#define PRESSURE_JUMP_MAX_PA 100.0f
-#define PRESSURE_JUMP_MAX_REJECTS 3
-
 // 50Hz timer
 void AP_Airspeed_DLVR::timer()
 {
@@ -155,29 +143,10 @@ void AP_Airspeed_DLVR::timer()
     }
 #pragma GCC diagnostic pop
 
-    const float press_pa = INCH_OF_H2O_TO_PASCAL * press_h2o;
-
-    // reject sudden pressure jumps from a recent good sample. Keeps the
-    // last good pressure published; real near-zero readings on the
-    // ground pass because the previous sample is already near zero.
-    // After PRESSURE_JUMP_MAX_REJECTS consecutive rejects, accept to
-    // resync so a real rapid change cannot lock the baseline forever.
-    if (last_sample_time_ms != 0 &&
-        (now - last_sample_time_ms) < 100 &&
-        fabsf(press_pa - last_sample_pressure) > PRESSURE_JUMP_MAX_PA) {
-        if (pressure_jump_rejects < PRESSURE_JUMP_MAX_REJECTS) {
-            pressure_jump_rejects++;
-            Debug("DLVR: Pressure jump %f -> %f", last_sample_pressure, press_pa);
-            return;
-        }
-    }
-
-    pressure_sum += press_pa;
+    pressure_sum += INCH_OF_H2O_TO_PASCAL * press_h2o;
     temperature_sum += temp;
     press_count++;
     temp_count++;
-    last_sample_pressure = press_pa;
-    pressure_jump_rejects = 0;
     last_sample_time_ms = now;
 }
 

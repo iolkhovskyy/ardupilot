@@ -34,20 +34,8 @@ extern const AP_HAL::HAL &hal;
 #define MS4525D0_I2C_ADDR2 0x36
 #define MS4525D0_I2C_ADDR3 0x46
 
-/*
-  Maximum allowed change between successive accepted samples.
-  At 50Hz a real gust cannot approach this; a buggy mid-scale/zero
-  glitch while flying will. If several samples in a row exceed the
-  limit we accept one anyway so a real step change can resync instead
-  of locking onto a stale baseline.
- */
-#define PRESSURE_JUMP_MAX_PA 100.0f
-#define PRESSURE_JUMP_MAX_REJECTS 3
-
 AP_Airspeed_MS4525::AP_Airspeed_MS4525(AP_Airspeed &_frontend, uint8_t _instance) :
-    AP_Airspeed_Backend(_frontend, _instance),
-    _last_sample_pressure(0),
-    _pressure_jump_rejects(0)
+    AP_Airspeed_Backend(_frontend, _instance)
 {
 }
 
@@ -212,32 +200,14 @@ void AP_Airspeed_MS4525::_collect()
         _voltage_correction(press2, temp2);
     }
 
-    const float press_avg = 0.5f * (press + press2);
-    const uint32_t now = AP_HAL::millis();
-
     WITH_SEMAPHORE(sem);
-
-    // reject sudden pressure jumps from a recent good sample. Keeps the
-    // last good pressure published; real near-zero readings on the
-    // ground pass because the previous sample is already near zero.
-    // After PRESSURE_JUMP_MAX_REJECTS consecutive rejects, accept to
-    // resync so a real rapid change cannot lock the baseline forever.
-    if (_last_sample_time_ms != 0 &&
-        (now - _last_sample_time_ms) < 100 &&
-        fabsf(press_avg - _last_sample_pressure) > PRESSURE_JUMP_MAX_PA) {
-        if (_pressure_jump_rejects < PRESSURE_JUMP_MAX_REJECTS) {
-            _pressure_jump_rejects++;
-            return;
-        }
-    }
 
     _press_sum += press + press2;
     _temp_sum += temp + temp2;
     _press_count += 2;
     _temp_count += 2;
-    _last_sample_pressure = press_avg;
-    _pressure_jump_rejects = 0;
-    _last_sample_time_ms = now;
+
+    _last_sample_time_ms = AP_HAL::millis();
 }
 
 /**

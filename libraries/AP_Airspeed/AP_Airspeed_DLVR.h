@@ -53,9 +53,6 @@ private:
     float temperature;
     float temperature_sum;
     float pressure_sum;
-    // last accepted sample pressure used for jump rejection
-    float last_sample_pressure;
-    uint8_t pressure_jump_rejects;
     uint32_t temp_count;
     uint32_t press_count;
     

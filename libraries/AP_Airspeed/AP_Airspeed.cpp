@@ -634,6 +634,15 @@ void AP_Airspeed::read(uint8_t i)
         update_calibration(i, raw_pressure);
     }
 
+    // IQR + rate-of-change spike filter (healthy samples only)
+    if (state[i].healthy) {
+        if (!prev_healthy) {
+            // avoid immediately resyncing on the first samples after recovery
+            state[i].spike_filter.reset_holds();
+        }
+        airspeed_pressure = state[i].spike_filter.apply(airspeed_pressure, param[i].ratio, AP_HAL::millis());
+    }
+
     // filter before clamping positive
     if (!prev_healthy) {
         // if the previous state was not healthy then we should not
