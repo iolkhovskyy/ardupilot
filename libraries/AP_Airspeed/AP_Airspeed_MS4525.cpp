@@ -200,6 +200,12 @@ void AP_Airspeed_MS4525::_collect()
         _voltage_correction(press2, temp2);
     }
 
+    // The two reads can agree on a mid-scale (zero) sample. Keep either
+    // one from entering the average unless that reading persists.
+    if (!pressure_sample_ok(press) || !pressure_sample_ok(press2)) {
+        return;
+    }
+
     WITH_SEMAPHORE(sem);
 
     _press_sum += press + press2;

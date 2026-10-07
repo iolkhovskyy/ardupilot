@@ -116,6 +116,15 @@ protected:
     // set bus ID of this instance, for ARSPD_DEVID parameters
     void set_bus_id(uint32_t id);
 
+    /*
+      MS4525 and DLVR parts on a noisy I2C bus occasionally return a
+      valid-looking mid-scale sample. That is zero differential
+      pressure, and one of them is enough to pull the averaged
+      airspeed down. Drop isolated collapses toward zero. A real
+      change repeats, so accept it after a few consistent samples.
+     */
+    bool pressure_sample_ok(float pressure_pa);
+
     enum class DevType {
         SITL     = 0x01,
         MS4525   = 0x02,
@@ -132,6 +141,11 @@ protected:
 private:
     AP_Airspeed &frontend;
     uint8_t instance;
+
+    // state for pressure_sample_ok()
+    float _last_sample_filter_pa;
+    uint32_t _last_sample_filter_ms;
+    uint8_t _pressure_collapse_count;
 };
 
 #endif  // AP_AIRSPEED_ENABLED
