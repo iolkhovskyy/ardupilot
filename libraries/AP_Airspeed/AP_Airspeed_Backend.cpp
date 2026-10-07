@@ -23,6 +23,7 @@
 
 #include <AP_Common/AP_Common.h>
 #include <AP_HAL/AP_HAL.h>
+#include <AP_Math/AP_Math.h>
 #include "AP_Airspeed.h"
 #include "AP_Airspeed_Backend.h"
 
@@ -30,7 +31,10 @@ extern const AP_HAL::HAL &hal;
 
 AP_Airspeed_Backend::AP_Airspeed_Backend(AP_Airspeed &_frontend, uint8_t _instance) :
     frontend(_frontend),
-    instance(_instance)
+    instance(_instance),
+    _last_sample_filter_pa(0),
+    _last_sample_filter_ms(0),
+    _pressure_collapse_count(0)
 {
 }
 
@@ -66,6 +70,32 @@ bool AP_Airspeed_Backend::bus_is_configured(void) const
 void AP_Airspeed_Backend::set_bus_id(uint32_t id)
 {
     frontend.param[instance].bus_id.set_and_save(int32_t(id));
+}
+
+bool AP_Airspeed_Backend::pressure_sample_ok(float pressure_pa)
+{
+    const uint32_t now_ms = AP_HAL::millis();
+
+    // Below about 8 m/s (30 Pa at the default ratio) a zero sample is a
+    // normal stop. Above that, dynamic pressure cannot fall to a quarter
+    // of its previous value in one sample period.
+    constexpr float MIN_PRESSURE_PA = 30.0f;
+    constexpr float COLLAPSE_RATIO = 0.25f;
+    constexpr uint32_t RECENT_MS = 200;
+    constexpr uint8_t CONFIRM_COUNT = 3;
+
+    const bool recent = _last_sample_filter_ms != 0 && (now_ms - _last_sample_filter_ms) < RECENT_MS;
+    const bool collapse = recent &&
+                          fabsf(_last_sample_filter_pa) > MIN_PRESSURE_PA &&
+                          fabsf(pressure_pa) < fabsf(_last_sample_filter_pa) * COLLAPSE_RATIO;
+    if (collapse && ++_pressure_collapse_count < CONFIRM_COUNT) {
+        return false;
+    }
+
+    _pressure_collapse_count = 0;
+    _last_sample_filter_pa = pressure_pa;
+    _last_sample_filter_ms = now_ms;
+    return true;
 }
 
 #endif  // AP_AIRSPEED_ENABLED

@@ -135,7 +135,13 @@ void AP_Airspeed_DLVR::timer()
     }
 #pragma GCC diagnostic pop
 
-    pressure_sum += INCH_OF_H2O_TO_PASCAL * press_h2o;
+    // A mid-scale sample is 0 Pa. Do not let an isolated one into the average.
+    const float press_pa = INCH_OF_H2O_TO_PASCAL * press_h2o;
+    if (!pressure_sample_ok(press_pa)) {
+        return;
+    }
+
+    pressure_sum += press_pa;
     temperature_sum += temp;
     press_count++;
     temp_count++;
