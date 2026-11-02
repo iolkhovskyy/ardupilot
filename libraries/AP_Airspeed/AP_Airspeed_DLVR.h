@@ -49,6 +49,21 @@ public:
 private:
     void timer();
 
+    enum class FailReason : uint8_t {
+        I2C = 0,
+        ZERO_INPUT = 1,
+        STATUS = 2,
+        RANGE = 3,
+        TEMP_SWING = 4,
+    };
+
+    // True when the 4 raw input bytes are mostly zero, or the raw 14-bit
+    // pressure code is zero. No pressure conversion is applied.
+    bool raw_input_bad_zero(const uint8_t raw_bytes[4], uint32_t data, uint8_t &zero_bytes) const;
+    void note_failed_pull(uint32_t now_ms, FailReason reason, const uint8_t *raw_bytes, uint8_t zero_bytes);
+    void log_failed_pull(uint32_t now_ms, bool ended);
+    void log_raw_reading(uint32_t data, const uint8_t raw_bytes[4]);
+
     float pressure;
     float temperature;
     float temperature_sum;
@@ -58,6 +73,16 @@ private:
     
     uint32_t last_sample_time_ms;
     const float range_inH2O;
+
+    // Invalid-pull incident. Counts unaccepted sensor reads and duration
+    // until the next accepted sample (drives ARSP.H=0 after ~100ms).
+    bool fail_active;
+    uint32_t fail_start_ms;
+    uint32_t fail_pulls;
+    uint32_t fail_last_log_ms;
+    uint8_t fail_bytes[4];
+    uint8_t fail_zero_bytes;
+    FailReason fail_reason;
 
     // initialise the sensor
     void setup();
