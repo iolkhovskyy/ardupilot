@@ -33,10 +33,14 @@ extern const AP_HAL::HAL &hal;
  # define Debug(fmt, args ...)
 #endif
 
+// Max consecutive I2C read() failures to bridge with the last good sample.
+// Timer runs at 50 Hz, so 100 ticks ~= 2 s. Analysed outages were ~1 s.
+#define DLVR_I2C_FAIL_HOLD_COUNT 100
 
 AP_Airspeed_DLVR::AP_Airspeed_DLVR(AP_Airspeed &_frontend, uint8_t _instance, const float _range_inH2O) :
     AP_Airspeed_Backend(_frontend, _instance),
-    range_inH2O(_range_inH2O)
+    range_inH2O(_range_inH2O),
+    i2c_fail_hold_count(0)
 {}
 
 /*
@@ -95,10 +99,26 @@ bool AP_Airspeed_DLVR::init()
 // 50Hz timer
 void AP_Airspeed_DLVR::timer()
 {
+    const uint32_t now_ms = AP_HAL::millis();
+
     uint8_t raw_bytes[4];
     if (!dev->read((uint8_t *)&raw_bytes, sizeof(raw_bytes))) {
+        // Bridge short I2C dropouts with the last accepted pressure/temperature.
+        // Analysed failures were ~1 s of failed reads; hold for up to ~2 s.
+        if (last_sample_time_ms != 0 &&
+            i2c_fail_hold_count < DLVR_I2C_FAIL_HOLD_COUNT) {
+            i2c_fail_hold_count++;
+            WITH_SEMAPHORE(sem);
+            // Keep frontend healthy; pressure/temperature members already hold
+            // the last good values.
+            last_sample_time_ms = now_ms;
+            return;
+        }
         return;
     }
+
+    // Bus responded again.
+    i2c_fail_hold_count = 0;
 
     uint32_t data = (raw_bytes[0] << 24) |
                     (raw_bytes[1] << 16) |

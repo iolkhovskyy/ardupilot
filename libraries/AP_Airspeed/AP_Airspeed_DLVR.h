@@ -59,6 +59,10 @@ private:
     uint32_t last_sample_time_ms;
     const float range_inH2O;
 
+    // Consecutive I2C read() failures while holding last good sample.
+    // At 50 Hz, 100 ~= 2 s (covers analysed ~1 s bus gaps).
+    uint16_t i2c_fail_hold_count;
+
     // initialise the sensor
     void setup();
     
